@@ -6,6 +6,9 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Engine/Engine.h"
+#include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
+#include "HAL/PlatformFilemanager.h"
 
 AAIManager::AAIManager()
 {
@@ -16,18 +19,22 @@ void AAIManager::BeginPlay()
 {
     Super::BeginPlay();
 
+    UE_LOG(LogTemp, Log, TEXT("AI Manager initialized - ready for use"));
+
     if (GEngine)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, TEXT("AI Manager Ready!"));
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, TEXT("AI Manager Ready"));
     }
-    UE_LOG(LogTemp, Log, TEXT("AI Manager ready"));
 }
 
 void AAIManager::SendMessage(const FString& Message)
 {
-    if (APIKey.IsEmpty())
+    // API 키 확인
+    FString CurrentAPIKey = GetAPIKey();
+
+    if (CurrentAPIKey.IsEmpty())
     {
-        UE_LOG(LogTemp, Error, TEXT("API Key not set"));
+        UE_LOG(LogTemp, Error, TEXT("API Key not available"));
         OnAIResponse.Broadcast(false, TEXT("API Key missing"));
 
         if (GEngine)
@@ -50,7 +57,7 @@ void AAIManager::SendMessage(const FString& Message)
     Request->SetURL(TEXT("https://api.openai.com/v1/chat/completions"));
     Request->SetVerb(TEXT("POST"));
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
-    Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *APIKey));
+    Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *CurrentAPIKey));
 
     // JSON 요청 생성
     Request->SetContentAsString(CreateRequestBody(Message));
@@ -64,7 +71,9 @@ void AAIManager::SendMessage(const FString& Message)
     }
 }
 
-void AAIManager::OnHttpResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bSuccess)
+void AAIManager::OnHttpResponse(TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Request,
+    TSharedPtr<IHttpResponse, ESPMode::ThreadSafe> Response,
+    bool bSuccess)
 {
     if (!bSuccess || !Response.IsValid())
     {
@@ -157,4 +166,158 @@ FString AAIManager::CreateRequestBody(const FString& Message)
     FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
 
     return OutputString;
+}
+
+FString AAIManager::GetAPIKey()
+{
+    // 이미 로드되어 있으면 캐시된 키 반환
+    if (bAPIKeyLoaded && !APIKey.IsEmpty())
+    {
+        return APIKey;
+    }
+
+    // 한 번만 시도하도록 플래그 설정
+    if (bAPIKeyLoaded)
+    {
+        return TEXT("");
+    }
+
+    // 안전한 파일 읽기 시도
+    FString LoadedKey = LoadAPIKeyFromFile();
+
+    if (!LoadedKey.IsEmpty())
+    {
+        APIKey = LoadedKey;
+        UE_LOG(LogTemp, Log, TEXT("API key loaded successfully from file"));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Could not load API key from file"));
+    }
+
+    bAPIKeyLoaded = true;
+    return APIKey;
+}
+
+FString AAIManager::LoadAPIKeyFromFile()
+{
+    UE_LOG(LogTemp, Log, TEXT("=== Starting safe API key loading ==="));
+
+    // 1단계: 엔진 준비 상태 확인
+    if (!IsEngineReady())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Engine not ready for file operations"));
+        return TEXT("");
+    }
+
+    // 2단계: 파일 경로 생성
+    FString FilePath;
+    try
+    {
+        FilePath = FPaths::ProjectDir() + TEXT("api_key.txt");
+        UE_LOG(LogTemp, Log, TEXT("Target file path: %s"), *FilePath);
+    }
+    catch (...)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to create file path"));
+        return TEXT("");
+    }
+
+    // 3단계: 파일 존재 확인
+    if (!DoesFileExistSafely(FilePath))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("API key file does not exist: %s"), *FilePath);
+        UE_LOG(LogTemp, Warning, TEXT("Please create api_key.txt in project root with your OpenAI API key"));
+        return TEXT("");
+    }
+
+    // 4단계: 파일 내용 읽기
+    FString FileContent = ReadFileContentSafely(FilePath);
+
+    if (FileContent.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to read file or file is empty"));
+        return TEXT("");
+    }
+
+    // 5단계: API 키 유효성 검사
+    FString CleanedKey = FileContent.TrimStartAndEnd();
+
+    if (CleanedKey.StartsWith(TEXT("sk-")) && CleanedKey.Len() > 20)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Valid API key loaded (length: %d)"), CleanedKey.Len());
+        return CleanedKey;
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid API key format. Must start with 'sk-' and be longer than 20 characters"));
+        return TEXT("");
+    }
+}
+
+bool AAIManager::IsEngineReady()
+{
+    // 기본적인 엔진 상태 확인
+    if (!GEngine || !IsValid(this))
+    {
+        return false;
+    }
+
+    // 월드 존재 확인
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool AAIManager::DoesFileExistSafely(const FString& FilePath)
+{
+    try
+    {
+        // 가장 안전한 방법: FPaths 사용
+        return FPaths::FileExists(FilePath);
+    }
+    catch (...)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Exception during file existence check"));
+        return false;
+    }
+}
+
+FString AAIManager::ReadFileContentSafely(const FString& FilePath)
+{
+    try
+    {
+        // 방법 1: 바이트 배열로 읽기 (더 안전)
+        TArray<uint8> FileData;
+        if (FFileHelper::LoadFileToArray(FileData, *FilePath))
+        {
+            // null terminator 추가
+            FileData.Add(0);
+
+            // UTF8에서 FString으로 변환
+            FString Result = FString(UTF8_TO_TCHAR(FileData.GetData()));
+            UE_LOG(LogTemp, Log, TEXT("File read successfully using byte array method"));
+            return Result;
+        }
+
+        // 방법 2: 직접 문자열 읽기 (백업)
+        FString DirectResult;
+        if (FFileHelper::LoadFileToString(DirectResult, *FilePath))
+        {
+            UE_LOG(LogTemp, Log, TEXT("File read successfully using direct string method"));
+            return DirectResult;
+        }
+
+        UE_LOG(LogTemp, Error, TEXT("Both file reading methods failed"));
+        return TEXT("");
+    }
+    catch (...)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Exception during file reading"));
+        return TEXT("");
+    }
 }
