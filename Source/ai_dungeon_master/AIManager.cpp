@@ -13,11 +13,26 @@
 AAIManager::AAIManager()
 {
     PrimaryActorTick.bCanEverTick = false;
+    ActionParser = nullptr;
 }
 
 void AAIManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    // ì•¡ì…˜ íŒŒì„œ ìƒì„± (UObjectë¡œ ì•ˆì „í•˜ê²Œ)
+    if (!ActionParser)
+    {
+        ActionParser = NewObject<UAIActionParser>(this);
+        if (ActionParser)
+        {
+            UE_LOG(LogTemp, Log, TEXT("ì•¡ì…˜ íŒŒì„œ ìƒì„± ì™„ë£Œ"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("ì•¡ì…˜ íŒŒì„œ ìƒì„± ì‹¤íŒ¨"));
+        }
+    }
 
     UE_LOG(LogTemp, Log, TEXT("AI Manager initialized - ready for use"));
 
@@ -25,11 +40,24 @@ void AAIManager::BeginPlay()
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, TEXT("AI Manager Ready"));
     }
+
+    // ìë™ í…ŒìŠ¤íŠ¸ ì‹¤í–‰ (ë””ë²„ê·¸ìš©)
+    FTimerHandle TestTimerHandle;
+    GetWorld()->GetTimerManager().SetTimer(TestTimerHandle, [this]()
+    {
+        if (ActionParser)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("=== ìë™ í…ŒìŠ¤íŠ¸ ì‹œì‘ ==="));
+            TestActionParser(TEXT("move to the door"));
+            TestActionParser(TEXT("[attack orc]"));
+            TestActionParser(TEXT("*look around*"));
+        }
+    }, 2.0f, false);
 }
 
 void AAIManager::SendMessage(const FString& Message)
 {
-    // API Å° È®ÀÎ
+    // API í‚¤ í™•ì¸
     FString CurrentAPIKey = GetAPIKey();
 
     if (CurrentAPIKey.IsEmpty())
@@ -50,7 +78,7 @@ void AAIManager::SendMessage(const FString& Message)
         return;
     }
 
-    // HTTP ¿äÃ» »ı¼º
+    // HTTP ìš”ì²­ ìƒì„±
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->OnProcessRequestComplete().BindUObject(this, &AAIManager::OnHttpResponse);
 
@@ -59,7 +87,7 @@ void AAIManager::SendMessage(const FString& Message)
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *CurrentAPIKey));
 
-    // JSON ¿äÃ» »ı¼º
+    // JSON ìš”ì²­ ìƒì„±
     Request->SetContentAsString(CreateRequestBody(Message));
     Request->ProcessRequest();
 
@@ -101,7 +129,7 @@ void AAIManager::OnHttpResponse(TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Re
         return;
     }
 
-    // JSON ÆÄ½Ì
+    // JSON íŒŒì‹±
     FString ResponseString = Response->GetContentAsString();
     TSharedPtr<FJsonObject> JsonObject;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
@@ -147,13 +175,13 @@ FString AAIManager::CreateRequestBody(const FString& Message)
 
     TArray<TSharedPtr<FJsonValue>> Messages;
 
-    // ½Ã½ºÅÛ ¸Ş½ÃÁö
+    // ì‹œìŠ¤í…œ ë©”ì‹œì§€
     TSharedPtr<FJsonObject> SystemMsg = MakeShareable(new FJsonObject);
     SystemMsg->SetStringField(TEXT("role"), TEXT("system"));
     SystemMsg->SetStringField(TEXT("content"), TEXT("You are a dungeon master for a text adventure game. Keep responses concise and engaging (under 50 words)."));
     Messages.Add(MakeShareable(new FJsonValueObject(SystemMsg)));
 
-    // »ç¿ëÀÚ ¸Ş½ÃÁö
+    // ì‚¬ìš©ì ë©”ì‹œì§€
     TSharedPtr<FJsonObject> UserMsg = MakeShareable(new FJsonObject);
     UserMsg->SetStringField(TEXT("role"), TEXT("user"));
     UserMsg->SetStringField(TEXT("content"), Message);
@@ -170,19 +198,19 @@ FString AAIManager::CreateRequestBody(const FString& Message)
 
 FString AAIManager::GetAPIKey()
 {
-    // ÀÌ¹Ì ·ÎµåµÇ¾î ÀÖÀ¸¸é Ä³½ÃµÈ Å° ¹İÈ¯
+    // ì´ë¯¸ ë¡œë“œëœ ê²½ìš° ìºì‹œëœ í‚¤ ë°˜í™˜
     if (bAPIKeyLoaded && !APIKey.IsEmpty())
     {
         return APIKey;
     }
 
-    // ÇÑ ¹ø¸¸ ½ÃµµÇÏµµ·Ï ÇÃ·¡±× ¼³Á¤
+    // ì¬ ì‹œë„ ë°©ì§€í•˜ë„ë¡ í”Œë˜ê·¸ ì„¤ì •
     if (bAPIKeyLoaded)
     {
         return TEXT("");
     }
 
-    // ¾ÈÀüÇÑ ÆÄÀÏ ÀĞ±â ½Ãµµ
+    // ì•ˆì „í•œ íŒŒì¼ ì½ê¸° ì‹œë„
     FString LoadedKey = LoadAPIKeyFromFile();
 
     if (!LoadedKey.IsEmpty())
@@ -203,14 +231,14 @@ FString AAIManager::LoadAPIKeyFromFile()
 {
     UE_LOG(LogTemp, Log, TEXT("=== Starting safe API key loading ==="));
 
-    // 1´Ü°è: ¿£Áø ÁØºñ »óÅÂ È®ÀÎ
+    // 1ë‹¨ê³„: ì—”ì§„ ì¤€ë¹„ ìƒíƒœ í™•ì¸
     if (!IsEngineReady())
     {
         UE_LOG(LogTemp, Warning, TEXT("Engine not ready for file operations"));
         return TEXT("");
     }
 
-    // 2´Ü°è: ÆÄÀÏ °æ·Î »ı¼º
+    // 2ë‹¨ê³„: íŒŒì¼ ê²½ë¡œ ìƒì„±
     FString FilePath;
     try
     {
@@ -223,7 +251,7 @@ FString AAIManager::LoadAPIKeyFromFile()
         return TEXT("");
     }
 
-    // 3´Ü°è: ÆÄÀÏ Á¸Àç È®ÀÎ
+    // 3ë‹¨ê³„: íŒŒì¼ ì¡´ì¬ í™•ì¸
     if (!DoesFileExistSafely(FilePath))
     {
         UE_LOG(LogTemp, Warning, TEXT("API key file does not exist: %s"), *FilePath);
@@ -231,7 +259,7 @@ FString AAIManager::LoadAPIKeyFromFile()
         return TEXT("");
     }
 
-    // 4´Ü°è: ÆÄÀÏ ³»¿ë ÀĞ±â
+    // 4ï¿½Ü°ï¿½: ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ğ±ï¿½
     FString FileContent = ReadFileContentSafely(FilePath);
 
     if (FileContent.IsEmpty())
@@ -240,7 +268,7 @@ FString AAIManager::LoadAPIKeyFromFile()
         return TEXT("");
     }
 
-    // 5´Ü°è: API Å° À¯È¿¼º °Ë»ç
+    // 5ë‹¨ê³„: API í‚¤ ìœ íš¨ì„± ê²€ì‚¬
     FString CleanedKey = FileContent.TrimStartAndEnd();
 
     if (CleanedKey.StartsWith(TEXT("sk-")) && CleanedKey.Len() > 20)
@@ -257,13 +285,13 @@ FString AAIManager::LoadAPIKeyFromFile()
 
 bool AAIManager::IsEngineReady()
 {
-    // ±âº»ÀûÀÎ ¿£Áø »óÅÂ È®ÀÎ
+    // ê¸°ë³¸ì ì¸ ì—”ì§„ ìƒíƒœ í™•ì¸
     if (!GEngine || !IsValid(this))
     {
         return false;
     }
 
-    // ¿ùµå Á¸Àç È®ÀÎ
+    // ì›”ë“œ ìƒíƒœ í™•ì¸
     UWorld* World = GetWorld();
     if (!World)
     {
@@ -277,7 +305,7 @@ bool AAIManager::DoesFileExistSafely(const FString& FilePath)
 {
     try
     {
-        // °¡Àå ¾ÈÀüÇÑ ¹æ¹ı: FPaths »ç¿ë
+        // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½: FPaths ï¿½ï¿½ï¿½
         return FPaths::FileExists(FilePath);
     }
     catch (...)
@@ -291,20 +319,20 @@ FString AAIManager::ReadFileContentSafely(const FString& FilePath)
 {
     try
     {
-        // ¹æ¹ı 1: ¹ÙÀÌÆ® ¹è¿­·Î ÀĞ±â (´õ ¾ÈÀü)
+        // ï¿½ï¿½ï¿½ 1: ï¿½ï¿½ï¿½ï¿½Æ® ï¿½è¿­ï¿½ï¿½ ï¿½Ğ±ï¿½ (ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
         TArray<uint8> FileData;
         if (FFileHelper::LoadFileToArray(FileData, *FilePath))
         {
-            // null terminator Ãß°¡
+            // null terminator ï¿½ß°ï¿½
             FileData.Add(0);
 
-            // UTF8¿¡¼­ FStringÀ¸·Î º¯È¯
+            // UTF8ï¿½ï¿½ï¿½ï¿½ FStringï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯
             FString Result = FString(UTF8_TO_TCHAR(FileData.GetData()));
             UE_LOG(LogTemp, Log, TEXT("File read successfully using byte array method"));
             return Result;
         }
 
-        // ¹æ¹ı 2: Á÷Á¢ ¹®ÀÚ¿­ ÀĞ±â (¹é¾÷)
+        // ï¿½ï¿½ï¿½ 2: ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ ï¿½Ğ±ï¿½ (ï¿½ï¿½ï¿½)
         FString DirectResult;
         if (FFileHelper::LoadFileToString(DirectResult, *FilePath))
         {
@@ -320,4 +348,70 @@ FString AAIManager::ReadFileContentSafely(const FString& FilePath)
         UE_LOG(LogTemp, Error, TEXT("Exception during file reading"));
         return TEXT("");
     }
+}
+
+void AAIManager::TestActionParser(const FString& TestInput)
+{
+    if (!ActionParser)
+    {
+        UE_LOG(LogTemp, Error, TEXT("ì•¡ì…˜ íŒŒì„œê°€ ì´ˆê¸°í™”ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤"));
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("ì•¡ì…˜ íŒŒì„œ ì—†ìŒ"));
+        }
+        return;
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("=== ì•¡ì…˜ íŒŒì„œ í…ŒìŠ¤íŠ¸ ì‹œì‘ ==="));
+    UE_LOG(LogTemp, Log, TEXT("ì…ë ¥: %s"), *TestInput);
+    
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, 
+            FString::Printf(TEXT("í…ŒìŠ¤íŠ¸ ì…ë ¥: %s"), *TestInput));
+    }
+    
+    // AI ì‘ë‹µ íŒŒì‹±
+    TArray<FParsedAction> ParsedActions = ActionParser->ParseAIResponse(TestInput);
+    
+    UE_LOG(LogTemp, Log, TEXT("íŒŒì‹±ëœ ì•¡ì…˜ ìˆ˜: %d"), ParsedActions.Num());
+    
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green,
+            FString::Printf(TEXT("íŒŒì‹±ëœ ì•¡ì…˜ ìˆ˜: %d"), ParsedActions.Num()));
+    }
+    
+    // ê° ì•¡ì…˜ ì •ë³´ ì¶œë ¥
+    for (int32 i = 0; i < ParsedActions.Num(); i++)
+    {
+        const FParsedAction& Action = ParsedActions[i];
+        
+        FString ActionTypeStr = UEnum::GetValueAsString(Action.ActionType);
+        
+        UE_LOG(LogTemp, Log, TEXT("ì•¡ì…˜ %d:"), i + 1);
+        UE_LOG(LogTemp, Log, TEXT("  íƒ€ì…: %s"), *ActionTypeStr);
+        UE_LOG(LogTemp, Log, TEXT("  ëª…ë ¹ì–´: %s"), *Action.Command);
+        UE_LOG(LogTemp, Log, TEXT("  ëŒ€ìƒ: %s"), *Action.Target);
+        UE_LOG(LogTemp, Log, TEXT("  ë§¤ê°œë³€ìˆ˜ ìˆ˜: %d"), Action.Parameters.Num());
+        
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Cyan,
+                FString::Printf(TEXT("ì•¡ì…˜ %d: %s - %s"), i + 1, *ActionTypeStr, *Action.Command));
+        }
+        
+        // ë§¤ê°œë³€ìˆ˜ë“¤ ì¶œë ¥
+        for (int32 j = 0; j < Action.Parameters.Num(); j++)
+        {
+            UE_LOG(LogTemp, Log, TEXT("    ë§¤ê°œë³€ìˆ˜ %d: %s"), j + 1, *Action.Parameters[j]);
+        }
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("=== ì•¡ì…˜ íŒŒì„œ í…ŒìŠ¤íŠ¸ ì™„ë£Œ ==="));
+}
+
+void AAIManager::TestParser(const FString& Input)
+{
+    TestActionParser(Input);
 }

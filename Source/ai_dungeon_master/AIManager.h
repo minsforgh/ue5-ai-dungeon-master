@@ -1,9 +1,9 @@
-// AIManager.h - ¾ÈÀüÇÑ ÆÄÀÏ ÀĞ±â ÃÖÁ¾ ¹öÀü
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Engine.h"
+#include "AIActionParser.h"
 #include "AIManager.generated.h"
 
 class IHttpRequest;
@@ -23,36 +23,48 @@ protected:
     virtual void BeginPlay() override;
 
 public:
-    // AI¿¡°Ô ¸Ş½ÃÁö Àü¼Û
+    // AIì—ê²Œ ë©”ì‹œì§€ ì „ì†¡
     UFUNCTION(BlueprintCallable, Category = "AI")
     void SendMessage(const FString& Message);
 
-    // AI ÀÀ´ä µ¨¸®°ÔÀÌÆ®
+    // AI ì‘ë‹µ ë¸ë¦¬ê²Œì´íŠ¸
     UPROPERTY(BlueprintAssignable, Category = "AI")
     FOnAIResponse OnAIResponse;
 
-    // API Å° °¡Á®¿À±â (¾ÈÀüÇÑ ¹öÀü)
+    // API í‚¤ ê°€ì ¸ì˜¤ê¸° (í…ŒìŠ¤íŠ¸ ëª©ì )
     UFUNCTION(BlueprintCallable, Category = "OpenAI")
     FString GetAPIKey();
+    
+    // ì•¡ì…˜ íŒŒì„œ í…ŒìŠ¤íŠ¸ í•¨ìˆ˜
+    UFUNCTION(BlueprintCallable, Category = "AI Action Parser")
+    void TestActionParser(const FString& TestInput);
+    
+    // ì½˜ì†” ëª…ë ¹ì–´ë¡œ í…ŒìŠ¤íŠ¸
+    UFUNCTION(Exec)
+    void TestParser(const FString& Input);
 
 private:
-    // HTTP ÀÀ´ä Ã³¸®
+    // HTTP ì‘ë‹µ ì²˜ë¦¬
     void OnHttpResponse(TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Request,
         TSharedPtr<IHttpResponse, ESPMode::ThreadSafe> Response,
         bool bSuccess);
 
-    // JSON ¿äÃ» º»¹® »ı¼º
+    // JSON ìš”ì²­ ë³¸ë¬¸ ìƒì„±
     FString CreateRequestBody(const FString& Message);
 
-    // ¾ÈÀüÇÑ ÆÄÀÏ ÀĞ±â (´Ü°èº°)
+    // ì•ˆì „í•œ íŒŒì¼ ì½ê¸° (ë‹¨ê³„ë³„)
     FString LoadAPIKeyFromFile();
     bool IsEngineReady();
     bool DoesFileExistSafely(const FString& FilePath);
     FString ReadFileContentSafely(const FString& FilePath);
 
-    // Ä³½ÃµÈ API Å°
+    // ìºì‹œëœ API í‚¤
     FString APIKey;
 
-    // API Å° ·Îµå »óÅÂ
+    // API í‚¤ ë¡œë“œ ìƒíƒœ
     bool bAPIKeyLoaded = false;
+    
+    // ì•¡ì…˜ íŒŒì„œ ë ˆí¼ëŸ°ìŠ¤
+    UPROPERTY()
+    class UAIActionParser* ActionParser;
 };

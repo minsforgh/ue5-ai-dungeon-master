@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "AIManager.h"
 #include "ai_dungeon_masterPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -25,5 +26,14 @@ protected:
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
+
+public:
+	// 액션 파서 테스트용 콘솔 명령어
+	UFUNCTION(Exec)
+	void TestParser(const FString& Input);
+
+private:
+	// AI Manager 레퍼런스 찾기
+	AAIManager* GetAIManager();
 
 };
